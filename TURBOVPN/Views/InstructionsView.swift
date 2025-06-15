@@ -2,10 +2,9 @@ import SwiftUI
 
 struct InstructionsView: View {
     @EnvironmentObject var viewModel: SubscriptionViewModel
-    @State private var selectedPlatform: Platform = .ios
+    @State private var selectedPlatform: Platform = .macos
     
     enum Platform: String, CaseIterable {
-        case ios = "iOS"
         case macos = "MacOS"
         case windows = "Windows"
         case linux = "Linux"
@@ -20,7 +19,7 @@ struct InstructionsView: View {
                     VStack(spacing: 16) {
                         // Переключатель платформ
                         HStack(spacing: 0) {
-                            ForEach(Platform.allCases, id: \.self) { platform in
+                            ForEach(Platform.allCases, id: \ .self) { platform in
                                 Button(action: {
                                     withAnimation {
                                         selectedPlatform = platform
@@ -45,8 +44,6 @@ struct InstructionsView: View {
                         
                         // Инструкции для выбранной платформы
                         switch selectedPlatform {
-                        case .ios:
-                            iOSInstructions
                         case .macos:
                             macOSInstructions
                         case .windows:
@@ -60,41 +57,6 @@ struct InstructionsView: View {
             }
             .navigationTitle("Инструкция")
             .navigationBarTitleDisplayMode(.inline)
-        }
-    }
-    
-    private var iOSInstructions: some View {
-        VStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                InstructionStep(number: 1, text: "Скопируйте конфигурацию")
-                InstructionStep(number: 2, text: "Установите приложение Shadowrocket из App Store")
-                InstructionStep(number: 3, text: "Откройте Shadowrocket")
-                InstructionStep(number: 4, text: "Нажмите + в правом верхнем углу")
-                InstructionStep(number: 5, text: "Вставьте скопированную конфигурацию")
-                InstructionStep(number: 6, text: "Нажмите 'Сохранить' и включите VPN")
-            }
-            .padding()
-            .background(Color.black.opacity(0.3))
-            .cornerRadius(12)
-            
-            Button(action: {
-                viewModel.copyConfig()
-            }) {
-                HStack {
-                    Image(systemName: "doc.on.doc")
-                    Text("Копировать конфигурацию")
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color(.systemGray2))
-                .foregroundColor(.white)
-                .cornerRadius(12)
-            }
-            
-            Link("Скачать Shadowrocket",
-                 destination: URL(string: "https://apps.apple.com/app/shadowrocket/id932747118")!)
-                .font(.footnote)
-                .foregroundColor(Color("NeonCyan"))
         }
     }
     

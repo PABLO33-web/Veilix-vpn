@@ -52,21 +52,13 @@ struct VPNStatusView: View {
                                 .foregroundColor(.white)
                         }
                         
-                        Button(action: {
-                            viewModel.copyConfig()
-                        }) {
-                            HStack {
-                                Image(systemName: "doc.on.doc")
-                                Text("Копировать конфигурацию")
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color(.systemGray2))
-                            .foregroundColor(.black)
-                            .cornerRadius(12)
+                        HStack {
+                            Text("Сервер:")
+                                .foregroundColor(Color(.systemGray2))
+                            Spacer()
+                            Text("Нидерланды")
+                                .foregroundColor(.white)
                         }
-                        .disabled(stats.isExpired)
-                        .opacity(stats.isExpired ? 0.5 : 1)
                     }
                     .padding()
                     .background(Color.black.opacity(0.3))

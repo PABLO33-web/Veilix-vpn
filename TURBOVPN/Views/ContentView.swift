@@ -17,6 +17,11 @@ struct ContentView: View {
     var body: some View {
         ZStack(alignment: .top) {
             TabView {
+                MainView()
+                    .tabItem {
+                        Image(systemName: "house.fill")
+                        Text("Главная")
+                    }
                 NavigationView {
                     ZStack {
                         Color.black.edgesIgnoringSafeArea(.all)
@@ -62,16 +67,9 @@ struct ContentView: View {
                 }
                 .background(Color.black.edgesIgnoringSafeArea(.all))
                 .tabItem {
-                    Image(systemName: "house.fill")
-                    Text("Главная")
+                    Image(systemName: "creditcard.fill")
+                    Text("Подписки")
                 }
-                
-                UserCabinetView()
-                    .background(Color.black.edgesIgnoringSafeArea(.all))
-                    .tabItem {
-                        Image(systemName: "person.fill")
-                        Text("Кабинет")
-                    }
                 
                 InstructionsView()
                     .tabItem {
