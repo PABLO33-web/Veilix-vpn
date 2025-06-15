@@ -2,6 +2,7 @@ import SwiftUI
 
 struct UserCabinetView: View {
     @EnvironmentObject var viewModel: SubscriptionViewModel
+    @State private var showDeleteConfirmation = false
     
     var body: some View {
         NavigationView {
@@ -55,11 +56,11 @@ struct UserCabinetView: View {
                                         }
                                         
                                         HStack {
-                                            Text("Осталось:")
+                                            Text("Статус:")
                                                 .foregroundColor(Color(.systemGray2))
                                             Spacer()
                                             Text(stats.timeRemaining)
-                                                .foregroundColor(.white)
+                                                .foregroundColor(stats.isExpired ? .red : .white)
                                         }
                                     }
                                     
@@ -80,6 +81,8 @@ struct UserCabinetView: View {
                                         .foregroundColor(.white)
                                         .cornerRadius(12)
                                     }
+                                    .disabled(viewModel.userStats?.isExpired ?? false)
+                                    .opacity(viewModel.userStats?.isExpired ?? false ? 0.5 : 1)
                                 }
                                 .padding()
                                 .background(Color.black.opacity(0.3))

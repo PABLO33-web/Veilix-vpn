@@ -64,19 +64,22 @@ class VPNService {
         let id = UUID().uuidString
         let port = getPortForSubscriptionType(isTrialPeriod: isTrialPeriod, isReferral: isReferral)
         
-        return VLESSConfig(
+        let config = VLESSConfig(
             id: id,
             email: email,
             port: port,
             network: "tcp",
             security: "reality",
-            publicKey: "u6Y91fp-r6xL8TXxKzRlnsFDkPMmXXRKXuwHYZ4KSyU",
+            publicKey: "4kuB0fRlvS1tmM2bWc-J8l5BxUPmHN9ncWXld5Rnphg",
             fingerprint: "chrome",
             serverName: "main1.veilix.online",
-            shortId: "f6",
-            serverAddress: "main1.veilix.online",
-            spiderX: "/"
+            shortId: "f9f3",
+            serverAddress: "eu1.veilix.online",
+            spiderX: "%2F"
         )
+        
+        print("📋 [VPNService] Сгенерирована новая конфигурация: \(config.asString)")
+        return config
     }
     
     // Метод для авторизации в x-ui
@@ -271,6 +274,7 @@ class VPNService {
             log("Generating VLESS config...")
             let config = try await generateVLESSConfig(userId: userId, isTrialPeriod: isTrialPeriod, isReferral: isReferral, email: email)
             log("Generated config with email: \(config.email) and port: \(config.port)")
+            print("📋 [VPNService] Активация подписки - полная конфигурация: \(config.asString)")
             
             log("Getting x-ui session...")
             let sessionCookie = try await getXUISession()
@@ -418,7 +422,7 @@ class VPNService {
         }
     }
     
-    func checkSubscription(userId: String) async throws -> (String, Date, Double)? {
+    func checkSubscription(userId: String) async throws -> (String, Date, Int64)? {
         print("Checking subscription for user: \(userId)")
         
         let sessionCookie = try await getXUISession()
@@ -464,12 +468,31 @@ class VPNService {
                                     let expiryTime = client["expiryTime"] as? Int ?? Int(Date().addingTimeInterval(3 * 24 * 60 * 60).timeIntervalSince1970 * 1000)
                                     let up = client["up"] as? Int64 ?? 0
                                     let down = client["down"] as? Int64 ?? 0
+                                    let totalTraffic = up + down // теперь в байтах
                                     
                                     let expiryDate = Date(timeIntervalSince1970: TimeInterval(expiryTime / 1000))
-                                    let totalTraffic = Double(up + down) / 1024 / 1024
                                     
-                                    print("Client details - ID: \(id), Expiry: \(expiryDate), Traffic: \(totalTraffic)MB")
-                                    return (id, expiryDate, totalTraffic)
+                                    // Создаем полную VLESS конфигурацию
+                                    let port = inbound["port"] as? Int ?? 443
+                                    let vlessConfig = VLESSConfig(
+                                        id: id,
+                                        email: email,
+                                        port: port,
+                                        network: "tcp",
+                                        security: "reality",
+                                        publicKey: "4kuB0fRlvS1tmM2bWc-J8l5BxUPmHN9ncWXld5Rnphg",
+                                        fingerprint: "chrome",
+                                        serverName: "main1.veilix.online",
+                                        shortId: "f9f3",
+                                        serverAddress: "eu1.veilix.online",
+                                        spiderX: "%2F"
+                                    )
+                                    
+                                    let fullConfig = vlessConfig.asString
+                                    
+                                    print("📋 [VPNService] Проверка подписки - полная конфигурация: \(fullConfig)")
+                                    print("Client details - ID: \(id), Expiry: \(expiryDate), Traffic: \(totalTraffic) bytes")
+                                    return (fullConfig, expiryDate, totalTraffic)
                                 }
                             }
                         }

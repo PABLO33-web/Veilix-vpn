@@ -31,17 +31,17 @@ struct VPNStatusView: View {
         VStack(spacing: 12) {
             if let stats = viewModel.userStats {
                 VStack(spacing: 16) {
-                    Text("Подписка активна")
+                    Text(stats.isExpired ? "Подписка истекла" : "Подписка активна")
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(stats.isExpired ? .red : .white)
                     
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Text("Осталось:")
+                            Text("Статус:")
                                 .foregroundColor(Color(.systemGray2))
                             Spacer()
                             Text(stats.timeRemaining)
-                                .foregroundColor(.white)
+                                .foregroundColor(stats.isExpired ? .red : .white)
                         }
                         
                         HStack {
@@ -65,6 +65,8 @@ struct VPNStatusView: View {
                             .foregroundColor(.black)
                             .cornerRadius(12)
                         }
+                        .disabled(stats.isExpired)
+                        .opacity(stats.isExpired ? 0.5 : 1)
                     }
                     .padding()
                     .background(Color.black.opacity(0.3))

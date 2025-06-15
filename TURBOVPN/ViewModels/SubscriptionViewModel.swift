@@ -62,14 +62,12 @@ class SubscriptionViewModel: ObservableObject {
             do {
                 print("[SubscriptionViewModel] Starting subscription purchase for: \(subscription.name)")
                 isLoading = true
-                // Гарантируем уникальный userId для любой подписки
                 var userId = UserDefaults.standard.string(forKey: userIdKey)
                 if userId == nil || userId == "" {
                     userId = UUID().uuidString
                     UserDefaults.standard.set(userId, forKey: userIdKey)
                     print("[SubscriptionViewModel] Generated and saved new userId: \(userId!)")
                 }
-                // Для trial и платных подписок используем один и тот же email: user_<userId>
                 let email = "user_\(userId!)"
                 if subscription.isTrial {
                     print("[SubscriptionViewModel] Trial subscription flow")
@@ -84,8 +82,8 @@ class SubscriptionViewModel: ObservableObject {
                     hasUsedTrial = true
                     await MainActor.run {
                         self.vpnConfig = config
+                        print("📋 [SubscriptionViewModel] Получена конфигурация при покупке пробной подписки: \(config)")
                         self.isLoading = false
-                        print("[SubscriptionViewModel] Trial subscription activated, config: \(String(describing: config))")
                         self.showTemporaryToast("Пробная подписка активирована!")
                     }
                 } else {
@@ -117,18 +115,11 @@ class SubscriptionViewModel: ObservableObject {
                     }
                 }
                 self.refreshSubscriptionStatus()
-            } catch let error as PaymentError {
-                print("[SubscriptionViewModel] ❌ Payment error: \(error.localizedDescription)")
-                await MainActor.run {
-                    self.isLoading = false
-                    self.showTemporaryToast(error.localizedDescription)
-                }
             } catch {
-                print("[SubscriptionViewModel] ❌ Error occurred: \(error)")
-                print("[SubscriptionViewModel] Error details: \(error.localizedDescription)")
+                print("❌ [SubscriptionViewModel] Error in purchaseSubscription: \(error)")
                 await MainActor.run {
-                    self.isLoading = false
-                    self.showTemporaryToast("Ошибка при покупке подписки")
+                    isLoading = false
+                    showTemporaryToast("Ошибка при покупке подписки")
                 }
             }
         }
@@ -210,7 +201,7 @@ class SubscriptionViewModel: ObservableObject {
                 let email = self.currentEmailForPayment ?? "user_\(paymentId)"
                 print("[SubscriptionViewModel] Calling vpnService.activateSubscription with userId: \(paymentId), email: \(email), durationInDays: \(durationInDays)")
                 let config = try await vpnService.activateSubscription(
-                    userId: paymentId, // это userId
+                    userId: paymentId,
                     subscriptionId: UUID().uuidString,
                     isTrialPeriod: false,
                     durationInDays: durationInDays,
@@ -218,9 +209,9 @@ class SubscriptionViewModel: ObservableObject {
                 )
                 await MainActor.run {
                     vpnConfig = config
+                    print("📋 [SubscriptionViewModel] Получена конфигурация при успешной оплате: \(config)")
                     isLoading = false
                     self.showTemporaryToast("Оплата прошла успешно! Подписка выдана.")
-                    print("[SubscriptionViewModel] Paid subscription activated, config: \(String(describing: config))")
                     self.refreshSubscriptionStatus()
                 }
             } catch {
@@ -234,8 +225,8 @@ class SubscriptionViewModel: ObservableObject {
     
     func copyConfig() {
         if let config = vpnConfig {
+            print("📋 [SubscriptionViewModel] Копируемая конфигурация: \(config)")
             UIPasteboard.general.string = config
-            // Показываем уведомление об успешном копировании
             showTemporaryToast("Конфигурация скопирована")
         }
     }
@@ -249,8 +240,9 @@ class SubscriptionViewModel: ObservableObject {
             let stats = UserStats(
                 email: email,
                 trafficUsed: 0, // Начинаем с 0 для новой подписки
-                expiryDate: expiryDate,
-                subscriptionStartDate: subscriptionStartDate
+                trafficLimit: 0, // Assuming a default trafficLimit
+                startDate: subscriptionStartDate,
+                expiryDate: expiryDate
             )
             
             Task { @MainActor in
@@ -261,48 +253,38 @@ class SubscriptionViewModel: ObservableObject {
     
     struct UserStats {
         let email: String
-        let trafficUsed: Double
+        let trafficUsed: Int64
+        let trafficLimit: Int64
+        let startDate: Date
         let expiryDate: Date
-        let subscriptionStartDate: Date
         
-        var trafficFormatted: String {
-            if trafficUsed > 1024 {
-                return String(format: "%.2f GB", trafficUsed / 1024)
-            } else {
-                return String(format: "%.2f MB", trafficUsed)
-            }
+        var isExpired: Bool {
+            return Date() > expiryDate
         }
         
         var timeRemaining: String {
-            let calendar = Calendar.current
-            let components = calendar.dateComponents([.day, .hour], from: Date(), to: expiryDate)
-            let days = components.day ?? 0
-            let hours = components.hour ?? 0
+            if isExpired {
+                return "Время пользования подпиской вышло"
+            }
             
-            if days > 0 {
-                if hours > 0 {
-                    return "\(days) \(pluralForm(days, one: "день", few: "дня", many: "дней")) \(hours) \(pluralForm(hours, one: "час", few: "часа", many: "часов"))"
-                } else {
-                    return "\(days) \(pluralForm(days, one: "день", few: "дня", many: "дней"))"
-                }
-            } else if hours > 0 {
-                return "\(hours) \(pluralForm(hours, one: "час", few: "часа", many: "часов"))"
+            let calendar = Calendar.current
+            let components = calendar.dateComponents([.day, .hour, .minute], from: Date(), to: expiryDate)
+            
+            if let days = components.day, days > 0 {
+                return "\(days) дн. \(components.hour ?? 0) ч."
+            } else if let hours = components.hour, hours > 0 {
+                return "\(hours) ч. \(components.minute ?? 0) мин."
+            } else if let minutes = components.minute, minutes > 0 {
+                return "\(minutes) мин."
             } else {
-                return "менее часа"
+                return "Менее часа"
             }
         }
         
-        private func pluralForm(_ number: Int, one: String, few: String, many: String) -> String {
-            let mod10 = number % 10
-            let mod100 = number % 100
-            
-            if mod10 == 1 && mod100 != 11 {
-                return one
-            } else if (mod10 >= 2 && mod10 <= 4) && !(mod100 >= 12 && mod100 <= 14) {
-                return few
-            } else {
-                return many
-            }
+        var trafficFormatted: String {
+            let usedGB = Double(trafficUsed) / 1_000_000_000.0
+            let limitGB = Double(trafficLimit) / 1_000_000_000.0
+            return String(format: "%.1f ГБ из %.1f ГБ", usedGB, limitGB)
         }
     }
     
@@ -321,22 +303,41 @@ class SubscriptionViewModel: ObservableObject {
                 if !userId.isEmpty {
                     print("Checking subscription for userId: \(userId)")
                     if let (config, expiryDate, trafficUsed) = try await vpnService.checkSubscription(userId: userId) {
+                        print("📋 [SubscriptionViewModel] Получена конфигурация при обновлении статуса: \(config)")
                         print("Found subscription: config=\(config), expiry=\(expiryDate), traffic=\(trafficUsed)")
+                        
+                        // Проверяем, не истекла ли подписка
+                        if Date() > expiryDate {
+                            print("Subscription has expired")
+                            await MainActor.run {
+                                self.vpnConfig = nil
+                                self.userStats = UserStats(
+                                    email: userId,
+                                    trafficUsed: trafficUsed,
+                                    trafficLimit: 0,
+                                    startDate: expiryDate.addingTimeInterval(-3 * 24 * 60 * 60),
+                                    expiryDate: expiryDate
+                                )
+                                self.showTemporaryToast("Время пользования подпиской вышло")
+                            }
+                            return
+                        }
+                        
                         await MainActor.run {
                             self.vpnConfig = config
-                            self.hasUsedTrial = true // Обновляем статус триала
+                            self.hasUsedTrial = true
                             self.userStats = UserStats(
                                 email: userId,
                                 trafficUsed: trafficUsed,
-                                expiryDate: expiryDate,
-                                subscriptionStartDate: expiryDate.addingTimeInterval(-3 * 24 * 60 * 60)
+                                trafficLimit: 0,
+                                startDate: expiryDate.addingTimeInterval(-3 * 24 * 60 * 60),
+                                expiryDate: expiryDate
                             )
                             print("Updated UI with new subscription data")
                         }
                     } else {
                         print("No active subscription found")
                         await MainActor.run {
-                            // Если подписка не найдена, очищаем данные
                             self.vpnConfig = nil
                             self.userStats = nil
                         }
@@ -384,6 +385,33 @@ class SubscriptionViewModel: ObservableObject {
         hasUsedTrial = false
         vpnConfig = nil
         userStats = nil
+    }
+    
+    // Метод для очистки всех подписок (только для тестирования)
+    func clearAllSubscriptions() async {
+        do {
+            isLoading = true
+            let userId = UserDefaults.standard.string(forKey: userIdKey) ?? ""
+            if !userId.isEmpty {
+                try await vpnService.deleteAllUserClients(userId: userId)
+                // Очищаем локальные данные
+                UserDefaults.standard.removeObject(forKey: userIdKey)
+                UserDefaults.standard.set(false, forKey: hasUsedTrialKey)
+                await MainActor.run {
+                    self.vpnConfig = nil
+                    self.userStats = nil
+                    self.showTemporaryToast("Все подписки очищены")
+                }
+            }
+        } catch {
+            print("Failed to clear subscriptions: \(error)")
+            await MainActor.run {
+                self.showTemporaryToast("Ошибка при очистке подписок")
+            }
+        }
+        await MainActor.run {
+            self.isLoading = false
+        }
     }
     
     init() {
