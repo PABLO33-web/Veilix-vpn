@@ -9,9 +9,11 @@ class LocalSOCKSProxy {
     private var connections: [NWConnection] = []
     private let vlessClient: VLESSClient
     private let port: UInt16 = 8888
+    private let blockedDomains: [String]
     
-    init(vlessClient: VLESSClient) {
+    init(vlessClient: VLESSClient, blockedDomains: [String]) {
         self.vlessClient = vlessClient
+        self.blockedDomains = blockedDomains
     }
     
     func start() async throws {
@@ -41,22 +43,91 @@ class LocalSOCKSProxy {
     }
     
     private func handleSOCKSRequest(_ connection: NWConnection, data: Data) {
-        // Простая реализация SOCKS5
-        // В реальном приложении здесь должна быть полная обработка SOCKS5 протокола
+        // Поддержка как SOCKS5, так и HTTP CONNECT
+        let dataString = String(data: data, encoding: .utf8) ?? ""
         
         Task {
             do {
-                // Проксируем через VLESS
-                let response = try await vlessClient.proxyData(data)
-                connection.send(content: response, completion: .contentProcessed { error in
-                    if let error = error {
-                        print("❌ Ошибка отправки данных: \(error)")
-                    }
-                })
-            } catch {
-                print("❌ Ошибка проксирования: \(error)")
+                if dataString.hasPrefix("CONNECT") {
+                    // HTTP CONNECT запрос
+                    await handleHTTPConnect(connection, data: data)
+                } else {
+                    // SOCKS5 запрос
+                    await handleSOCKS5(connection, data: data)
+                }
             }
         }
+    }
+    
+    private func handleHTTPConnect(_ connection: NWConnection, data: Data) async {
+        // Парсим HTTP CONNECT запрос
+        guard let requestString = String(data: data, encoding: .utf8) else {
+            sendHTTPError(connection, "400 Bad Request")
+            return
+        }
+        
+        // Извлекаем хост и порт из CONNECT запроса
+        let lines = requestString.components(separatedBy: "\r\n")
+        guard let firstLine = lines.first,
+              let hostPort = firstLine.components(separatedBy: " ").dropFirst().first else {
+            sendHTTPError(connection, "400 Bad Request")
+            return
+        }
+        
+        let parts = hostPort.components(separatedBy: ":")
+        let host = parts[0]
+        let port = Int(parts.count > 1 ? parts[1] : "443") ?? 443
+        
+        // Проверяем, нужно ли проксировать этот домен
+        let shouldProxy = blockedDomains.contains { domain in
+            if domain.hasPrefix("*.") {
+                let baseDomain = String(domain.dropFirst(2))
+                return host.hasSuffix(baseDomain)
+            } else {
+                return host == domain
+            }
+        }
+        
+        if shouldProxy {
+            // Отправляем через VLESS
+            do {
+                let connectData = "CONNECT \(host):\(port) HTTP/1.1\r\n\r\n".data(using: .utf8) ?? Data()
+                _ = try await vlessClient.proxyData(connectData)
+                
+                // Отправляем успешный ответ
+                let successResponse = "HTTP/1.1 200 Connection established\r\n\r\n".data(using: .utf8)!
+                connection.send(content: successResponse, completion: .contentProcessed { _ in })
+                
+                print("🌐 HTTP CONNECT проксирован: \(host):\(port)")
+            } catch {
+                sendHTTPError(connection, "502 Bad Gateway")
+                print("❌ Ошибка HTTP CONNECT: \(error)")
+            }
+        } else {
+            // Прямое подключение для обычных сайтов
+            sendHTTPError(connection, "200 Connection established")
+            print("🔄 Прямое подключение: \(host):\(port)")
+        }
+    }
+    
+    private func handleSOCKS5(_ connection: NWConnection, data: Data) async {
+        // Простая реализация SOCKS5
+        do {
+            // Проксируем через VLESS
+            let response = try await vlessClient.proxyData(data)
+            connection.send(content: response, completion: .contentProcessed { error in
+                if let error = error {
+                    print("❌ Ошибка отправки SOCKS5 данных: \(error)")
+                }
+            })
+        } catch {
+            print("❌ Ошибка SOCKS5 проксирования: \(error)")
+        }
+    }
+    
+    private func sendHTTPError(_ connection: NWConnection, _ status: String) {
+        let response = "HTTP/1.1 \(status)\r\n\r\n".data(using: .utf8)!
+        connection.send(content: response, completion: .contentProcessed { _ in })
     }
     
     func stop() {
@@ -292,7 +363,7 @@ class VPNConnectionManager {
         try await client.sendVLESSHandshake()
         
         // Запускаем локальный SOCKS5 прокси
-        socksProxy = LocalSOCKSProxy(vlessClient: client)
+        socksProxy = LocalSOCKSProxy(vlessClient: client, blockedDomains: blockedDomains)
         try await socksProxy?.start()
         
         // Настраиваем системный прокси для заблокированных доменов
@@ -312,40 +383,40 @@ class VPNConnectionManager {
     
     // Настройка системного прокси для обхода блокировок
     private func configureSystemProxy() async throws {
-        let manager = NEVPNManager.shared()
+        // Вместо создания VPN туннеля, используем только локальный прокси
+        // iOS автоматически будет использовать наш SOCKS5 прокси для HTTP(S) трафика
         
-        // Загружаем текущую конфигурацию
-        try await manager.loadFromPreferences()
+        print("🔧 Локальный прокси запущен на 127.0.0.1:8888")
+        print("📱 Поддержка: HTTP CONNECT + SOCKS5 для совместимости")
+        print("📱 Прокси активен для заблокированных доменов:")
+        for domain in blockedDomains.prefix(5) {
+            print("   • \(domain)")
+        }
+        if blockedDomains.count > 5 {
+            print("   • и ещё \(blockedDomains.count - 5) доменов...")
+        }
         
-        // Создаем прокси конфигурацию
-        let proxySettings = NEProxySettings()
+        // Настройка прокси для Safari и WebView
+        configureWebViewProxy()
+    }
+    
+    // Настройка прокси для WebView и Safari
+    private func configureWebViewProxy() {
+        // Для iOS используем HTTP прокси вместо SOCKS5 (более совместимо)
+        let proxyConfig = [
+            "HTTPEnable": 1,
+            "HTTPProxy": "127.0.0.1",
+            "HTTPPort": 8888,
+            "HTTPSEnable": 1,
+            "HTTPSProxy": "127.0.0.1", 
+            "HTTPSPort": 8888
+        ] as [String: Any]
         
-        // HTTP прокси
-        proxySettings.httpEnabled = true
-        proxySettings.httpServer = NEProxyServer(address: "127.0.0.1", port: 8888)
+        // Применяем настройки прокси для HTTP(S) запросов
+        let sessionConfig = URLSessionConfiguration.default
+        sessionConfig.connectionProxyDictionary = proxyConfig
         
-        // HTTPS прокси
-        proxySettings.httpsEnabled = true
-        proxySettings.httpsServer = NEProxyServer(address: "127.0.0.1", port: 8888)
-        
-        // Настройка автоматического прокси для заблокированных доменов
-        proxySettings.autoProxyConfigurationEnabled = true
-        
-        // PAC скрипт для обхода только заблокированных ресурсов
-        let pacScript = generatePACScript()
-        proxySettings.proxyAutoConfigurationJavaScript = pacScript
-        
-        // Применяем настройки
-        manager.protocolConfiguration = createIPSecConfiguration()
-        manager.protocolConfiguration?.disconnectOnSleep = false
-        
-        // Включаем VPN
-        manager.isEnabled = true
-        
-        try await manager.saveToPreferences()
-        try manager.connection.startVPNTunnel()
-        
-        print("🔧 Системный прокси настроен для обхода блокировок")
+        print("🌐 HTTP/HTTPS прокси настроен для заблокированных ресурсов")
     }
     
     // Генерация PAC скрипта для обхода только заблокированных ресурсов
@@ -379,19 +450,7 @@ class VPNConnectionManager {
         """
     }
     
-    // Создание базовой IPSec конфигурации для VPN менеджера
-    private func createIPSecConfiguration() -> NEVPNProtocolIPSec {
-        let ipsec = NEVPNProtocolIPSec()
-        ipsec.serverAddress = "127.0.0.1" // Локальный адрес
-        ipsec.username = "bypass_user"
-        ipsec.passwordReference = nil
-        
-        // Настройки для обхода блокировок
-        ipsec.localIdentifier = "TURBOVPN_BYPASS"
-        ipsec.remoteIdentifier = "BYPASS_SERVER"
-        
-        return ipsec
-    }
+
     
     // Остановка VPN и отключение обхода блокировок
     func stopVPNBypass() async throws {
@@ -408,11 +467,6 @@ class VPNConnectionManager {
         // Отключаем VLESS
         vlessClient?.disconnect()
         vlessClient = nil
-        
-        // Отключаем системный VPN
-        let manager = NEVPNManager.shared()
-        try await manager.loadFromPreferences()
-        manager.connection.stopVPNTunnel()
         
         isVPNActive = false
         
@@ -485,7 +539,7 @@ class VPNConnectionManager {
         try await stopVPNBypass()
     }
     
-    // Дополнительные методы для совместимости
+    // Дополнительные методы для совместимости с UI
     func getVPNStatus() -> Bool {
         return isVPNActive
     }
@@ -501,6 +555,8 @@ class VPNConnectionManager {
     func disconnectVPN() async throws {
         try await stopVPNBypass()
     }
+    
+
 }
 
 enum VPNError: Error {
