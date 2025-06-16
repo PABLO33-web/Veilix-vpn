@@ -1,6 +1,6 @@
 import Foundation
-import NetworkExtension
-import Network
+@preconcurrency import NetworkExtension
+@preconcurrency import Network
 import CryptoKit
 
 // Локальный SOCKS5 прокси сервер для обхода блокировок
@@ -141,9 +141,9 @@ class LocalSOCKSProxy {
 // VLESS протокол клиент для прямого подключения
 class VLESSClient {
     private var connection: NWConnection?
-    private let serverAddress: String
-    private let serverPort: Int
-    private let uuid: String
+    let serverAddress: String
+    let serverPort: Int
+    let uuid: String
     private let security: String
     private let publicKey: String
     private let shortId: String
@@ -358,6 +358,9 @@ class VPNConnectionManager {
         
         vlessClient = client
         
+        // Создаем и устанавливаем VPN конфигурацию в настройки iOS
+        try await createAndInstallVPNConfiguration(vlessConfig: client)
+        
         // Подключаемся к VLESS серверу
         try await client.connect()
         try await client.sendVLESSHandshake()
@@ -366,8 +369,8 @@ class VPNConnectionManager {
         socksProxy = LocalSOCKSProxy(vlessClient: client, blockedDomains: blockedDomains)
         try await socksProxy?.start()
         
-        // Настраиваем системный прокси для заблокированных доменов
-        try await configureSystemProxy()
+        // Запускаем VPN туннель
+        try await startVPNTunnel()
         
         isVPNActive = true
         
@@ -377,47 +380,128 @@ class VPNConnectionManager {
             object: true
         )
         
-        print("✅ VPN активирован! Обход блокировок включен для:")
-        print("📱 Instagram, YouTube, Facebook, Twitter и других заблокированных ресурсов")
+        print("✅ VPN активирован и добавлен в настройки iOS!")
+        print("📱 Обход блокировок включен для Instagram, YouTube, Facebook и др.")
     }
     
-    // Настройка системного прокси для обхода блокировок
-    private func configureSystemProxy() async throws {
-        // Вместо создания VPN туннеля, используем только локальный прокси
-        // iOS автоматически будет использовать наш SOCKS5 прокси для HTTP(S) трафика
+    // Создание и установка VPN конфигурации в настройки iOS
+    private func createAndInstallVPNConfiguration(vlessConfig: VLESSClient) async throws {
+        let manager = NEVPNManager.shared()
         
-        print("🔧 Локальный прокси запущен на 127.0.0.1:8888")
-        print("📱 Поддержка: HTTP CONNECT + SOCKS5 для совместимости")
-        print("📱 Прокси активен для заблокированных доменов:")
-        for domain in blockedDomains.prefix(5) {
-            print("   • \(domain)")
-        }
-        if blockedDomains.count > 5 {
-            print("   • и ещё \(blockedDomains.count - 5) доменов...")
-        }
+        // Загружаем существующую конфигурацию
+        try await manager.loadFromPreferences()
         
-        // Настройка прокси для Safari и WebView
-        configureWebViewProxy()
+        // Создаем IKEv2 конфигурацию (iOS поддерживает нативно)
+        let vpnProtocol = NEVPNProtocolIKEv2()
+        vpnProtocol.serverAddress = vlessConfig.serverAddress
+        vpnProtocol.remoteIdentifier = vlessConfig.serverAddress
+        vpnProtocol.localIdentifier = "TURBOVPN_User"
+        
+        // Настройки аутентификации (базовые для демонстрации)
+        vpnProtocol.authenticationMethod = .none
+        vpnProtocol.useExtendedAuthentication = false
+        vpnProtocol.disconnectOnSleep = false
+        
+        // Мертвый peer detection
+        vpnProtocol.deadPeerDetectionRate = .low
+        
+        manager.protocolConfiguration = vpnProtocol
+        manager.localizedDescription = "TURBOVPN - Обход блокировок"
+        manager.isEnabled = true
+        
+        // Настройки маршрутизации - только для заблокированных доменов
+        let onDemandRule = NEOnDemandRuleConnect()
+        onDemandRule.interfaceTypeMatch = .any
+        
+        // Создаем правила для заблокированных доменов
+        var domainRules: [String] = []
+        for domain in blockedDomains {
+            domainRules.append(domain.replacingOccurrences(of: "*.", with: ""))
+        }
+        onDemandRule.dnsSearchDomainMatch = domainRules
+        
+        manager.onDemandRules = [onDemandRule]
+        manager.isOnDemandEnabled = true
+        
+        // Сохраняем конфигурацию
+        try await manager.saveToPreferences()
+        
+        // Перезагружаем после сохранения
+        try await manager.loadFromPreferences()
+        
+        print("✅ VPN конфигурация создана и сохранена в настройки iOS")
+        print("📱 Пользователь может увидеть 'TURBOVPN' в Настройки -> VPN")
     }
     
-    // Настройка прокси для WebView и Safari
-    private func configureWebViewProxy() {
-        // Для iOS используем HTTP прокси вместо SOCKS5 (более совместимо)
-        let proxyConfig = [
-            "HTTPEnable": 1,
-            "HTTPProxy": "127.0.0.1",
-            "HTTPPort": 8888,
-            "HTTPSEnable": 1,
-            "HTTPSProxy": "127.0.0.1", 
-            "HTTPSPort": 8888
-        ] as [String: Any]
+    // Запуск VPN туннеля
+    private func startVPNTunnel() async throws {
+        let manager = NEVPNManager.shared()
+        try await manager.loadFromPreferences()
         
-        // Применяем настройки прокси для HTTP(S) запросов
-        let sessionConfig = URLSessionConfiguration.default
-        sessionConfig.connectionProxyDictionary = proxyConfig
+        guard manager.connection.status != .connected && manager.connection.status != .connecting else {
+            print("⚠️ VPN уже подключен или подключается")
+            return
+        }
         
-        print("🌐 HTTP/HTTPS прокси настроен для заблокированных ресурсов")
+        // Запрашиваем разрешение пользователя и запускаем VPN
+        do {
+            try manager.connection.startVPNTunnel()
+            print("🔄 Запрос разрешения VPN у пользователя...")
+            
+            // Ждем подтверждения от пользователя
+            try await waitForVPNConnection(manager: manager)
+            
+        } catch {
+            print("❌ Ошибка запуска VPN туннеля: \(error)")
+            throw VPNError.activationFailed(error.localizedDescription)
+        }
     }
+    
+    // Ожидание подключения VPN
+    private func waitForVPNConnection(manager: NEVPNManager) async throws {
+        return try await withCheckedThrowingContinuation { continuation in
+            var observer: NSObjectProtocol?
+            
+            observer = NotificationCenter.default.addObserver(
+                forName: .NEVPNStatusDidChange,
+                object: manager.connection,
+                queue: .main
+            ) { _ in
+                switch manager.connection.status {
+                case .connected:
+                    print("✅ VPN успешно подключен!")
+                    if let observer = observer {
+                        NotificationCenter.default.removeObserver(observer)
+                    }
+                    continuation.resume()
+                case .disconnected:
+                    print("❌ VPN отключен")
+                    if let observer = observer {
+                        NotificationCenter.default.removeObserver(observer)
+                    }
+                    continuation.resume(throwing: VPNError.configurationFailed)
+                case .invalid:
+                    print("❌ Недействительная VPN конфигурация")
+                    if let observer = observer {
+                        NotificationCenter.default.removeObserver(observer)
+                    }
+                    continuation.resume(throwing: VPNError.configurationFailed)
+                default:
+                    break
+                }
+            }
+            
+            // Таймаут 30 секунд
+            DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
+                if let observer = observer {
+                    NotificationCenter.default.removeObserver(observer)
+                    continuation.resume(throwing: VPNError.activationFailed("Timeout"))
+                }
+            }
+        }
+    }
+    
+
     
     // Генерация PAC скрипта для обхода только заблокированных ресурсов
     private func generatePACScript() -> String {
@@ -458,6 +542,15 @@ class VPNConnectionManager {
         
         guard isVPNActive else {
             throw VPNError.notConnected
+        }
+        
+        // Останавливаем VPN туннель
+        let manager = NEVPNManager.shared()
+        try await manager.loadFromPreferences()
+        
+        if manager.connection.status == .connected || manager.connection.status == .connecting {
+            manager.connection.stopVPNTunnel()
+            print("🔄 Отключение VPN туннеля...")
         }
         
         // Останавливаем SOCKS5 прокси
@@ -550,10 +643,49 @@ class VPNConnectionManager {
                 completion(isConnected)
             }
         }
+        
+        // Также слушаем системные уведомления VPN
+        NotificationCenter.default.addObserver(forName: .NEVPNStatusDidChange, object: nil, queue: .main) { _ in
+            Task {
+                let manager = NEVPNManager.shared()
+                try? await manager.loadFromPreferences()
+                let isConnected = manager.connection.status == .connected
+                completion(isConnected)
+            }
+        }
     }
     
     func disconnectVPN() async throws {
         try await stopVPNBypass()
+    }
+    
+    // Метод для установки VPN конфигурации (совместимость с UI)
+    func installVPNConfiguration() async throws {
+        // Создаем базовую VPN конфигурацию
+        let manager = NEVPNManager.shared()
+        try await manager.loadFromPreferences()
+        
+        // Создаем простую IKEv2 конфигурацию для демонстрации
+        let vpnProtocol = NEVPNProtocolIKEv2()
+        vpnProtocol.serverAddress = "demo.server.com"
+        vpnProtocol.remoteIdentifier = "demo.server.com"
+        vpnProtocol.localIdentifier = "TURBOVPN_User"
+        vpnProtocol.authenticationMethod = .none
+        vpnProtocol.useExtendedAuthentication = false
+        
+        manager.protocolConfiguration = vpnProtocol
+        manager.localizedDescription = "TURBOVPN - Обход блокировок"
+        manager.isEnabled = true
+        
+        try await manager.saveToPreferences()
+        print("📋 VPN конфигурация установлена в настройки")
+    }
+    
+    // Проверка реального статуса VPN
+    func checkRealVPNStatus() async -> Bool {
+        let manager = NEVPNManager.shared()
+        try? await manager.loadFromPreferences()
+        return manager.connection.status == .connected
     }
     
 
