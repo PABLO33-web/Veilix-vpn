@@ -1,12 +1,5 @@
 import Foundation
 
-enum VPNError: Error {
-    case invalidResponse
-    case activationFailed(String)
-    case configurationError(String)
-    case serverError
-}
-
 class VPNService {
     private let adminPanelURL = "https://eu1.veilix.online:2053/g6243vvgwyw6423" // Исправленный URL панели
     private let botToken = "YOUR_BOT_TOKEN"
@@ -369,7 +362,7 @@ class VPNService {
             throw VPNError.activationFailed("Inbound not found")
             
         } catch {
-            throw VPNError.configurationError(error.localizedDescription)
+            throw VPNError.configurationFailed
         }
     }
     

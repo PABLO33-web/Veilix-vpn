@@ -4,7 +4,7 @@ import NetworkExtension
 struct MainView: View {
     @EnvironmentObject var viewModel: SubscriptionViewModel
     @State private var isConnecting = false
-    @State private var vpnStatus: NEVPNStatus = .disconnected
+    @State private var vpnStatus: Bool = false
 
     var body: some View {
         VStack(spacing: 24) {
@@ -28,7 +28,7 @@ struct MainView: View {
             Button(action: {
                 handleVPNButton()
             }) {
-                Image(vpnStatus == .connected ? "vpn_on" : "vpn_off")
+                Image(vpnStatus ? "vpn_on" : "vpn_off")
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 240, height: 240)
@@ -37,7 +37,7 @@ struct MainView: View {
             .opacity((viewModel.vpnConfig == nil || (viewModel.userStats?.isExpired ?? true)) ? 0.5 : 1)
             .padding(.bottom, 8)
 
-            Text(vpnStatus == .connected ? "VPN включен" : "VPN отключен")
+            Text(vpnStatus ? "VPN включен" : "VPN отключен")
                 .foregroundColor(.white)
                 .font(.headline)
                 .padding(.bottom, 16)
@@ -86,10 +86,10 @@ struct MainView: View {
         isConnecting = true
         Task {
             do {
-                if vpnStatus == .connected || vpnStatus == .connecting {
+                if vpnStatus {
                     try await VPNConnectionManager.shared.disconnectVPN()
                 } else {
-                    try await VPNConnectionManager.shared.installVPNConfiguration(from: config)
+                    try await VPNConnectionManager.shared.startVPNWithBypass(from: config)
                 }
             } catch {
                 // Можно добавить отображение ошибки

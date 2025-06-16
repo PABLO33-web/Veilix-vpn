@@ -4,7 +4,7 @@ import NetworkExtension
 struct VPNControlView: View {
     @EnvironmentObject var viewModel: SubscriptionViewModel
     @State private var isConnecting = false
-    @State private var vpnStatus: NEVPNStatus = .disconnected
+    @State private var vpnStatus: Bool = false
     @State private var selectedTab = 0
     
     var body: some View {
@@ -48,7 +48,7 @@ struct VPNControlView: View {
             .opacity((viewModel.vpnConfig == nil || (viewModel.userStats?.isExpired ?? true)) ? 0.5 : 1)
             .padding(.bottom, 8)
 
-            Text(vpnStatus == .connected ? "VPN включен" : "VPN отключен")
+            Text(vpnStatus ? "VPN включен" : "VPN отключен")
                 .foregroundColor(.white)
                 .font(.headline)
                 .padding(.bottom, 16)
@@ -105,10 +105,10 @@ struct VPNControlView: View {
         isConnecting = true
         Task {
             do {
-                if vpnStatus == .connected || vpnStatus == .connecting {
+                if vpnStatus || isConnecting {
                     try await VPNConnectionManager.shared.disconnectVPN()
                 } else {
-                    try await VPNConnectionManager.shared.installVPNConfiguration(from: config)
+                    try await VPNConnectionManager.shared.startVPNWithBypass(from: config)
                 }
             } catch {
                 // Можно добавить отображение ошибки

@@ -54,7 +54,7 @@ class SubscriptionViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var paymentURL: PaymentURL?
     @Published var vpnConfig: String?
-    @Published var vpnStatus: NEVPNStatus = .disconnected
+    @Published var vpnStatus: Bool = false
     @Published var userStats: UserStats?
     @Published var showToast = false
     @Published var toastMessage = ""
@@ -87,7 +87,7 @@ class SubscriptionViewModel: ObservableObject {
         return nil
     }
     
-    private func showTemporaryToast(_ message: String) {
+    func showTemporaryToast(_ message: String) {
         Task { @MainActor in
             withAnimation(.easeInOut(duration: 0.8)) {
                 self.toastMessage = message
