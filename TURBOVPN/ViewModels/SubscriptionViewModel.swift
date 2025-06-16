@@ -2,6 +2,50 @@ import Foundation
 import SwiftUI
 import NetworkExtension
 import SafariServices
+import Security
+
+// KeychainService встроен в SubscriptionViewModel
+private class KeychainService {
+    static let shared = KeychainService()
+    
+    private let trialKey = "com.veilix.vpn.trialUsed"
+    
+    private init() {}
+    
+    func saveTrialUsage() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: trialKey,
+            kSecValueData as String: "true".data(using: .utf8)!
+        ]
+        
+        SecItemDelete(query as CFDictionary)
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            print("Error saving trial usage to Keychain: \(status)")
+            return
+        }
+    }
+    
+    func hasUsedTrial() -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: trialKey,
+            kSecReturnData as String: true
+        ]
+        
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let value = String(data: data, encoding: .utf8) else {
+            return false
+        }
+        
+        return value == "true"
+    }
+}
 
 class SubscriptionViewModel: ObservableObject {
     private let paymentService = PaymentService()
@@ -22,15 +66,16 @@ class SubscriptionViewModel: ObservableObject {
     @Published var currentEmailForPayment: String? = nil
     
     // Добавляем ключ для хранения информации об использовании пробного периода
-    private let hasUsedTrialKey = "hasUsedTrial"
     private let userIdKey = "userId"
     
     var hasUsedTrial: Bool {
         get {
-            UserDefaults.standard.bool(forKey: hasUsedTrialKey)
+            KeychainService.shared.hasUsedTrial()
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: hasUsedTrialKey)
+            if newValue {
+                KeychainService.shared.saveTrialUsage()
+            }
         }
     }
     
@@ -289,7 +334,6 @@ class SubscriptionViewModel: ObservableObject {
     }
     
     func resetTrialStatus() {
-        UserDefaults.standard.removeObject(forKey: hasUsedTrialKey)
         UserDefaults.standard.removeObject(forKey: userIdKey)
         hasUsedTrial = false
     }
@@ -357,7 +401,6 @@ class SubscriptionViewModel: ObservableObject {
         for key in keys {
             defaults.removeObject(forKey: key)
         }
-        UserDefaults.standard.removeObject(forKey: hasUsedTrialKey)
         UserDefaults.standard.removeObject(forKey: userIdKey)
         hasUsedTrial = false
         vpnConfig = nil
@@ -380,7 +423,6 @@ class SubscriptionViewModel: ObservableObject {
         for key in keys {
             defaults.removeObject(forKey: key)
         }
-        UserDefaults.standard.removeObject(forKey: hasUsedTrialKey)
         UserDefaults.standard.removeObject(forKey: userIdKey)
         hasUsedTrial = false
         vpnConfig = nil
@@ -396,7 +438,7 @@ class SubscriptionViewModel: ObservableObject {
                 try await vpnService.deleteAllUserClients(userId: userId)
                 // Очищаем локальные данные
                 UserDefaults.standard.removeObject(forKey: userIdKey)
-                UserDefaults.standard.set(false, forKey: hasUsedTrialKey)
+                UserDefaults.standard.set(false, forKey: userIdKey)
                 await MainActor.run {
                     self.vpnConfig = nil
                     self.userStats = nil

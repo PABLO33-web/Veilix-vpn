@@ -29,7 +29,7 @@ extension Subscription {
             features: [
                 "1 день бесплатно",
                 "Базовая скорость",
-                "Сервер main1.veilix.online",
+                "Сервер Нидерланды",
                 "1 устройство"
             ],
             isPopular: false
@@ -46,7 +46,7 @@ extension Subscription {
             durationInDays: 30,
             features: [
                 "Максимальная скорость",
-                "Сервер main1.veilix.online",
+                "Сервер Нидерланды",
                 "1 устройство",
                 "Базовая поддержка"
             ],
@@ -64,7 +64,7 @@ extension Subscription {
             durationInDays: 90,
             features: [
                 "Максимальная скорость",
-                "Сервер main1.veilix.online",
+                "Сервер Нидерланды",
                 "2 устройства",
                 "Поддержка 24/7"
             ],
@@ -82,7 +82,7 @@ extension Subscription {
             durationInDays: 180,
             features: [
                 "Максимальная скорость",
-                "Сервер main1.veilix.online",
+                "Сервер Нидерланды",
                 "3 устройства",
                 "Приоритетная поддержка"
             ],
@@ -100,7 +100,7 @@ extension Subscription {
             durationInDays: 365,
             features: [
                 "Максимальная скорость",
-                "Сервер main1.veilix.online",
+                "Сервер Нидерланды",
                 "5 устройств",
                 "VIP поддержка"
             ],

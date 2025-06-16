@@ -72,7 +72,7 @@ class VPNService {
             security: "reality",
             publicKey: "4kuB0fRlvS1tmM2bWc-J8l5BxUPmHN9ncWXld5Rnphg",
             fingerprint: "chrome",
-            serverName: "main1.veilix.online",
+            serverName: "Нидерланды",
             shortId: "f9f3",
             serverAddress: "eu1.veilix.online",
             spiderX: "%2F"
@@ -482,7 +482,7 @@ class VPNService {
                                         security: "reality",
                                         publicKey: "4kuB0fRlvS1tmM2bWc-J8l5BxUPmHN9ncWXld5Rnphg",
                                         fingerprint: "chrome",
-                                        serverName: "main1.veilix.online",
+                                        serverName: "Нидерланды",
                                         shortId: "f9f3",
                                         serverAddress: "eu1.veilix.online",
                                         spiderX: "%2F"
